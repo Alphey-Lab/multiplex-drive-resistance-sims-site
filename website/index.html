@@ -166,11 +166,9 @@ ul.task-list li input[type="checkbox"] {
 #| standalone: true
 #| viewerHeight: 1150
 
+## file: app.py
 import matplotlib.pyplot as plt
-import micropip
 import numpy as np
-
-await micropip.install("./files/multiplex_drive_resistance-0.1.0-py3-none-any.whl")
 
 from shiny import App, reactive, render, ui
 
@@ -350,7 +348,10 @@ def server(input, output, session):
         return fig
 
 
-app = App(app_ui, server)</code></pre>
+app = App(app_ui, server)
+
+## file: requirements.txt
+./files/multiplex_drive_resistance-0.1.0-py3-none-any.whl</code></pre>
 <section id="parameter-guide" class="level2">
 <h2 class="anchored" data-anchor-id="parameter-guide">Parameter guide</h2>
 <table class="caption-top table">
