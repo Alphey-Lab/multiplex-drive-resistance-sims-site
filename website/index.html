@@ -119,7 +119,17 @@ ul.task-list li input[type="checkbox"] {
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#parameter-guide" id="toc-parameter-guide" class="nav-link active" data-scroll-target="#parameter-guide">Parameter guide</a></li>
+  <li><a href="#parameter-guide" id="toc-parameter-guide" class="nav-link active" data-scroll-target="#parameter-guide">Parameter guide</a>
+  <ul class="collapse">
+  <li><a href="#multiplex-level" id="toc-multiplex-level" class="nav-link" data-scroll-target="#multiplex-level">Multiplex level</a></li>
+  <li><a href="#fitness-costs" id="toc-fitness-costs" class="nav-link" data-scroll-target="#fitness-costs">Fitness costs</a></li>
+  <li><a href="#population-dynamics" id="toc-population-dynamics" class="nav-link" data-scroll-target="#population-dynamics">Population dynamics</a></li>
+  <li><a href="#drive-release-frequencies" id="toc-drive-release-frequencies" class="nav-link" data-scroll-target="#drive-release-frequencies">Drive release frequencies</a></li>
+  <li><a href="#molecular-drive-parameters-per-target-site" id="toc-molecular-drive-parameters-per-target-site" class="nav-link" data-scroll-target="#molecular-drive-parameters-per-target-site">Molecular drive parameters (per target site)</a></li>
+  <li><a href="#resistance-variant-fractions" id="toc-resistance-variant-fractions" class="nav-link" data-scroll-target="#resistance-variant-fractions">Resistance variant fractions</a></li>
+  <li><a href="#burn-in-and-simulation-duration" id="toc-burn-in-and-simulation-duration" class="nav-link" data-scroll-target="#burn-in-and-simulation-duration">Burn-in and simulation duration</a></li>
+  <li><a href="#reproducibility" id="toc-reproducibility" class="nav-link" data-scroll-target="#reproducibility">Reproducibility</a></li>
+  </ul></li>
   <li><a href="#browser-runtime-notes" id="toc-browser-runtime-notes" class="nav-link" data-scroll-target="#browser-runtime-notes">Browser-runtime notes</a></li>
   </ul>
 </nav>
@@ -164,9 +174,10 @@ ul.task-list li input[type="checkbox"] {
 #|   shinylive does not work in self-contained HTML documents.
 #|   Please set `embed-resources: false` in your metadata.
 #| standalone: true
-#| viewerHeight: 1150
+#| viewerHeight: 1750
 
 ## file: app.py
+import io
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -183,10 +194,54 @@ from multiplex_drive_resistance.website import (
 
 
 def empty_figure(message: str):
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig, ax = plt.subplots(figsize=(9, 4))
     ax.axis("off")
     ax.text(0.5, 0.5, message, ha="center", va="center", wrap=True)
     return fig
+
+
+def build_population_figure(result):
+    """Build the population-size trajectory figure from a simulation result."""
+    fig, ax = plt.subplots(figsize=(9, 4))
+    ax.plot(result.t, result.N, label="Total", linewidth=2)
+    if result.M is not None:
+        ax.plot(result.t, result.M, label="Males", alpha=0.75)
+    if result.F is not None:
+        ax.plot(result.t, result.F, label="Females", alpha=0.75)
+    ax.set_xlabel("Generation")
+    ax.set_ylabel("Population size")
+    ax.set_title("Population-size trajectory")
+    ax.legend(loc="best")
+    ax.grid(alpha=0.25)
+    fig.tight_layout()
+    return fig
+
+
+def build_frequency_figure(result, m):
+    """Build the combined allele/haplotype-frequency trajectory figure from a simulation result."""
+    labels = haplotype_labels(m)
+    combined = combined_frequency_trajectory(result)
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    for label, freq in zip(labels, combined):
+        if np.max(freq) &gt; 1e-4:
+            ax.plot(result.t, freq, label=label)
+    ax.set_xlabel("Generation")
+    ax.set_ylabel("Combined frequency")
+    ax.set_ylim(0, 1)
+    ax.set_title("Combined allele / haplotype-frequency trajectory")
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
+    ax.grid(alpha=0.25)
+    fig.subplots_adjust(right=0.78)
+    return fig
+
+
+def _fig_to_png_bytes(fig) -&gt; bytes:
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
+    return buf.read()
 
 
 app_ui = ui.page_fluid(
@@ -225,11 +280,13 @@ app_ui = ui.page_fluid(
         ),
         ui.card(
             ui.card_header("Population-size trajectory"),
-            ui.output_plot("population_plot"),
+            ui.output_plot("population_plot", height="420px"),
+            ui.download_button("download_population_plot", "Download population plot (PNG)", class_="btn-sm mt-1"),
         ),
         ui.card(
             ui.card_header("Combined allele / haplotype-frequency trajectory"),
-            ui.output_plot("frequency_plot"),
+            ui.output_plot("frequency_plot", height="500px"),
+            ui.download_button("download_frequency_plot", "Download frequency plot (PNG)", class_="btn-sm mt-1"),
         ),
     ),
 )
@@ -267,6 +324,12 @@ def server(input, output, session):
             simulation_state.set({"result": result, "error": None, "seed": seed, "m": m})
         except Exception as exc:
             simulation_state.set({"result": None, "error": str(exc), "seed": None, "m": int(input.m())})
+
+    def _download_filename(plot_name: str) -&gt; str:
+        state = simulation_state.get()
+        seed_part = str(state["seed"]) if state["seed"] is not None else "noseed"
+        m_part = f"m{state['m']}"
+        return f"{plot_name}_{m_part}_{seed_part}.png"
 
     @output
     @render.ui
@@ -306,19 +369,7 @@ def server(input, output, session):
         if result is None:
             return empty_figure("Run a simulation to view the population-size trajectory.")
 
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.plot(result.t, result.N, label="Total", linewidth=2)
-        if result.M is not None:
-            ax.plot(result.t, result.M, label="Males", alpha=0.75)
-        if result.F is not None:
-            ax.plot(result.t, result.F, label="Females", alpha=0.75)
-        ax.set_xlabel("Generation")
-        ax.set_ylabel("Population size")
-        ax.set_title("Population-size trajectory")
-        ax.legend(loc="best")
-        ax.grid(alpha=0.25)
-        fig.tight_layout()
-        return fig
+        return build_population_figure(result)
 
     @output
     @render.plot
@@ -331,21 +382,23 @@ def server(input, output, session):
         if result is None:
             return empty_figure("Run a simulation to view the combined allele / haplotype-frequency trajectory.")
 
-        labels = haplotype_labels(state["m"])
-        combined = combined_frequency_trajectory(result)
+        return build_frequency_figure(result, state["m"])
 
-        fig, ax = plt.subplots(figsize=(8, 5))
-        for label, freq in zip(labels, combined):
-            if np.max(freq) &gt; 1e-4:
-                ax.plot(result.t, freq, label=label)
-        ax.set_xlabel("Generation")
-        ax.set_ylabel("Combined frequency")
-        ax.set_ylim(0, 1)
-        ax.set_title("Combined allele / haplotype-frequency trajectory")
-        ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
-        ax.grid(alpha=0.25)
-        fig.tight_layout()
-        return fig
+    @render.download(filename=lambda: _download_filename("population_trajectory"))
+    def download_population_plot():
+        state = simulation_state.get()
+        if state["result"] is None:
+            return
+        fig = build_population_figure(state["result"])
+        yield _fig_to_png_bytes(fig)
+
+    @render.download(filename=lambda: _download_filename("frequency_trajectory"))
+    def download_frequency_plot():
+        state = simulation_state.get()
+        if state["result"] is None:
+            return
+        fig = build_frequency_figure(state["result"], state["m"])
+        yield _fig_to_png_bytes(fig)
 
 
 app = App(app_ui, server)
@@ -354,6 +407,9 @@ app = App(app_ui, server)
 ./files/multiplex_drive_resistance-0.1.0-py3-none-any.whl</code></pre>
 <section id="parameter-guide" class="level2">
 <h2 class="anchored" data-anchor-id="parameter-guide">Parameter guide</h2>
+<p>The parameters below follow the model described in <a href="https://doi.org/10.1073/pnas.2200567119">Khatri &amp; Burt (2022), <em>PNAS</em> 119(33):e2200567119</a>, which analyses resistance evolution to multiplex CRISPR gene drives. The current website defaults are intended for exploration and may differ from the exact parameter values used in specific figures in that study.</p>
+<section id="multiplex-level" class="level3">
+<h3 class="anchored" data-anchor-id="multiplex-level">Multiplex level</h3>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 50%">
@@ -362,48 +418,203 @@ app = App(app_ui, server)
 <thead>
 <tr class="header">
 <th>Input</th>
-<th>Meaning</th>
+<th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
 <td><code>m</code></td>
-<td>Multiplex level: singleplex (<code>m=1</code>), duplex (<code>m=2</code>), or triplex (<code>m=3</code>).</td>
-</tr>
-<tr class="even">
-<td><code>s</code>, <code>h</code>, <code>hN</code>, <code>sigma</code></td>
-<td>Female fitness-cost and dominance parameters for drive or resistant alleles.</td>
-</tr>
-<tr class="odd">
-<td><code>Rm</code>, <code>K</code></td>
-<td>Intrinsic growth rate and carrying capacity.</td>
-</tr>
-<tr class="even">
-<td><code>xD</code>, <code>yD</code></td>
-<td>Initial drive frequency in males and females.</td>
-</tr>
-<tr class="odd">
-<td><code>epsilon</code>, <code>nu</code>, <code>mu</code></td>
-<td>Cleavage efficiency, NHEJ rate, and point-mutation rate. For duplex/triplex, these are per target site.</td>
-</tr>
-<tr class="even">
-<td><code>beta</code>, <code>xi</code></td>
-<td>Fractions of new NHEJ or point-mutation events that are functional resistant alleles.</td>
-</tr>
-<tr class="odd">
-<td><code>preexisting</code></td>
-<td>Adds the model’s pre-drive burn-in to approximate mutation-selection balance before release.</td>
-</tr>
-<tr class="even">
-<td><code>T</code></td>
-<td>Number of generations to simulate.</td>
-</tr>
-<tr class="odd">
-<td><code>seed</code></td>
-<td>Integer seed for reproducible stochastic output; leave blank for a fresh random run.</td>
+<td><strong>Number of guide RNAs / targeted sites</strong> in the drive construct. Singleplex (<code>m=1</code>) targets one site; duplex (<code>m=2</code>) and triplex (<code>m=3</code>) target two or three sites simultaneously. In the multiplex model, drive failure requires a resistance allele at <strong>every</strong> targeted site; increasing <code>m</code> therefore exponentially reduces the probability that a resistance haplotype is assembled by chance.</td>
 </tr>
 </tbody>
 </table>
+</section>
+<section id="fitness-costs" class="level3">
+<h3 class="anchored" data-anchor-id="fitness-costs">Fitness costs</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Input</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>s</code></td>
+<td><strong>Fitness cost</strong> associated with being homozygous for a nonfunctional resistance allele (or drive-bearing genotypes where applicable). <code>s = 1</code> means fully lethal; <code>s = 0</code> means no cost.</td>
+</tr>
+<tr class="even">
+<td><code>h</code></td>
+<td><strong>Dominance coefficient</strong> for the fitness cost in wild-type / drive heterozygotes. <code>h = 0</code> gives fully recessive costs; <code>h = 0.5</code> gives additive costs.</td>
+</tr>
+<tr class="odd">
+<td><code>hN</code></td>
+<td><strong>Dominance coefficient</strong> for the fitness cost in wild-type / nonfunctional-resistance heterozygotes. Analogous to <code>h</code> but applies to the nonfunctional resistant class.</td>
+</tr>
+<tr class="even">
+<td><code>sigma</code></td>
+<td><strong>Fitness cost of functional resistance</strong> when heterozygous with wild type. Functional resistant alleles retain normal gene function, so their fitness cost is generally expected to be small (<code>sigma</code> near 0). The fitness penalty when homozygous functional-resistant is <code>2 * sigma</code>.</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="population-dynamics" class="level3">
+<h3 class="anchored" data-anchor-id="population-dynamics">Population dynamics</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Input</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Rm</code></td>
+<td><strong>Intrinsic rate of population growth</strong> (maximum per-generation growth factor in an empty environment). The model uses a Beverton–Holt density-dependent regulation scheme; <code>Rm</code> controls how strongly the population rebounds after suppression. Values near 1 give slow growth; the default (<code>Rm = 6</code>) represents a moderately fast-growing organism.</td>
+</tr>
+<tr class="even">
+<td><code>K</code></td>
+<td><strong>Carrying capacity</strong>: the approximate equilibrium population size in the absence of drive. Larger <code>K</code> supports more individuals and therefore a larger pool of <em>de novo</em> resistant variants per generation.</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="drive-release-frequencies" class="level3">
+<h3 class="anchored" data-anchor-id="drive-release-frequencies">Drive release frequencies</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Input</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>xD</code></td>
+<td><strong>Initial drive-allele frequency in males</strong> at the time of release (generation 0). A value of <code>0.1</code> corresponds to a 10 % drive frequency in males at release.</td>
+</tr>
+<tr class="even">
+<td><code>yD</code></td>
+<td><strong>Initial drive-allele frequency in females</strong> at the time of release (generation 0). Can be set independently from <code>xD</code>; for example, releasing only drive-bearing males gives <code>xD &gt; 0, yD = 0</code>.</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="molecular-drive-parameters-per-target-site" class="level3">
+<h3 class="anchored" data-anchor-id="molecular-drive-parameters-per-target-site">Molecular drive parameters (per target site)</h3>
+<p>For duplex (<code>m=2</code>) and triplex (<code>m=3</code>) models, the parameters below apply <strong>independently at each target site</strong>. A resistance haplotype is only functional if <em>all</em> sites carry an allele that avoids drive.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Input</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>epsilon</code></td>
+<td><strong>Cleavage efficiency</strong>: the probability that the drive machinery successfully cuts a susceptible (wild-type) target site in each generation. High cleavage efficiency (near 1) is required for effective drive spread.</td>
+</tr>
+<tr class="even">
+<td><code>nu</code></td>
+<td><strong>NHEJ repair probability</strong>: the probability that a cleavage event at one target site is repaired by nonhomologous end joining rather than by homology-directed repair (HDR) that copies the drive. NHEJ repair produces a resistance allele (either functional or nonfunctional).</td>
+</tr>
+<tr class="odd">
+<td><code>mu</code></td>
+<td><strong>De novo point-mutation rate</strong>: the per-generation, per-target-site probability that a new point mutation converts a wild-type site into a resistant variant. This is a small positive number (e.g.&nbsp;<code>1 × 10⁻⁸</code>).</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="resistance-variant-fractions" class="level3">
+<h3 class="anchored" data-anchor-id="resistance-variant-fractions">Resistance variant fractions</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Input</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>beta</code></td>
+<td><strong>Functional fraction of NHEJ-derived resistance variants.</strong> A fraction <code>beta</code> of NHEJ repair outcomes produce a <strong>functional</strong> resistance allele (retaining gene function); the remaining fraction <code>1 − beta</code> produce a <strong>nonfunctional</strong> allele (disrupted gene). High <code>beta</code> means most resistance is functional and therefore selectively neutral or only mildly costly.</td>
+</tr>
+<tr class="even">
+<td><code>xi</code></td>
+<td><strong>Functional fraction of point-mutation-derived resistance variants.</strong> Analogous to <code>beta</code> but for de novo point mutations: a fraction <code>xi</code> of point mutations at a target site produce a functional resistance allele.</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="burn-in-and-simulation-duration" class="level3">
+<h3 class="anchored" data-anchor-id="burn-in-and-simulation-duration">Burn-in and simulation duration</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Input</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>preexisting</code></td>
+<td><strong>Pre-release burn-in.</strong> When enabled, the simulator runs the population for an initial period without drive so that resistance variants can arise via de novo mutation and approach mutation–selection balance before the drive is introduced. The approximate duration of this burn-in depends on the model and parameters (particularly <code>mu</code> and <code>K</code>). Disabling it starts the drive release from an all-wild-type population.</td>
+</tr>
+<tr class="even">
+<td><code>T</code></td>
+<td><strong>Number of generations to simulate</strong> after the drive release. The simulation may terminate earlier if the population crashes to zero.</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="reproducibility" class="level3">
+<h3 class="anchored" data-anchor-id="reproducibility">Reproducibility</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Input</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>seed</code></td>
+<td><strong>Random-number seed</strong> for the stochastic simulation. Providing the same integer seed and the same parameters always reproduces the same trajectory. Leave blank for a non-deterministic run that will differ each time.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><strong>Reference:</strong> Khatri BS, Burt A (2022). <em>PNAS</em> 119(33):e2200567119. <a href="https://doi.org/10.1073/pnas.2200567119" class="uri">https://doi.org/10.1073/pnas.2200567119</a></p>
+</section>
 </section>
 <section id="browser-runtime-notes" class="level2">
 <h2 class="anchored" data-anchor-id="browser-runtime-notes">Browser-runtime notes</h2>
