@@ -1,0 +1,23 @@
+[
+  {
+    "objectID": "website/index.html",
+    "href": "website/index.html",
+    "title": "Interactive simulator",
+    "section": "",
+    "text": "WarningScientific-use caveat\n\n\n\nThis page runs a single in-silico stochastic model trajectory at a time. It is for exploratory simulation use only: it is not a field-performance predictor, experimental authorization tool, or regulatory decision tool. Results depend on the model assumptions and chosen parameters, and a single run does not quantify uncertainty.\nThis Phase-1 explorer runs the repository’s existing multiplex_drive_resistance.simulate(...) API entirely in the browser with Shinylive/Pyodide. Defaults match examples/run_examples.py."
+  },
+  {
+    "objectID": "website/index.html#parameter-guide",
+    "href": "website/index.html#parameter-guide",
+    "title": "Interactive simulator",
+    "section": "Parameter guide",
+    "text": "Parameter guide\n\n\n\n\n\n\n\nInput\nMeaning\n\n\n\n\nm\nMultiplex level: singleplex (m=1), duplex (m=2), or triplex (m=3).\n\n\ns, h, hN, sigma\nFemale fitness-cost and dominance parameters for drive or resistant alleles.\n\n\nRm, K\nIntrinsic growth rate and carrying capacity.\n\n\nxD, yD\nInitial drive frequency in males and females.\n\n\nepsilon, nu, mu\nCleavage efficiency, NHEJ rate, and point-mutation rate. For duplex/triplex, these are per target site.\n\n\nbeta, xi\nFractions of new NHEJ or point-mutation events that are functional resistant alleles.\n\n\npreexisting\nAdds the model’s pre-drive burn-in to approximate mutation-selection balance before release.\n\n\nT\nNumber of generations to simulate.\n\n\nseed\nInteger seed for reproducible stochastic output; leave blank for a fresh random run."
+  },
+  {
+    "objectID": "website/index.html#browser-runtime-notes",
+    "href": "website/index.html#browser-runtime-notes",
+    "title": "Interactive simulator",
+    "section": "Browser-runtime notes",
+    "text": "Browser-runtime notes\n\nThe page downloads Pyodide and the package wheel on first load, so startup is slower than the command-line interface.\nThis page intentionally runs one stochastic simulation at a time; it does not estimate uncertainty across replicate runs."
+  }
+]
